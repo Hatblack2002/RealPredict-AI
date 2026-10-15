@@ -8,6 +8,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -16,16 +18,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.realpredict.ai.di.AppContainer
 import com.realpredict.ai.ui.components.BallVariant
 import com.realpredict.ai.ui.components.LotteryBall
 import com.realpredict.ai.ui.theme.*
+import com.realpredict.ai.viewmodel.HomeViewModel
+import com.realpredict.ai.viewmodel.HomeUiState
+
+@Composable
+fun HomeViewModelFactory(): HomeViewModel = viewModel {
+    AppContainer.homeViewModel()
+}
 
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToStats: () -> Unit = {},
-    onNavigateToLab: () -> Unit = {}
+    onNavigateToLab: () -> Unit = {},
+    viewModel: HomeViewModel = HomeViewModelFactory()
 ) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
 
     Column(
@@ -36,7 +50,7 @@ fun HomeScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Encabezado de la Quiniela Real
+        // Encabezado
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -55,9 +69,33 @@ fun HomeScreen(
                     fontSize = 11.sp
                 )
             }
+            Surface(
+                color = EmeraldPrimary.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, EmeraldPrimary.copy(alpha = 0.35f))
+            ) {
+                Text(
+                    text = if (state.isLoading) "Cargando..." else "${state.totalDraws} sorteos",
+                    color = EmeraldBright,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
         }
 
-        // Card 1: PREDICCIÓN PRINCIPAL (Idéntica al Mockup Image 2)
+        // Error
+        state.errorMessage?.let { msg ->
+            Surface(
+                color = Color(0xFF3B1B1B),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(msg, color = Color(0xFFFFB4AB), fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+            }
+        }
+
+        // Card PREDICCIÓN con último sorteo REAL
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -82,14 +120,14 @@ fun HomeScreen(
                 ) {
                     Column {
                         Text(
-                            text = "QUINIELA REAL: PREDICCIÓN PRINCIPAL",
+                            text = "ÚLTIMO SORTEO REAL",
                             color = Color(0xFF6EE7B7),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "AUDITADA POR MOTOR ESTADÍSTICO",
+                            text = "DESDE LA BD LOCAL · VERIFICADO",
                             color = EmeraldPrimary,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
@@ -112,99 +150,77 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Las tres esferas de lotería en 3D
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LotteryBall(number = "38", size = 72.dp, variant = BallVariant.EMERALD, label = "1ra")
-                    LotteryBall(number = "64", size = 72.dp, variant = BallVariant.EMERALD, label = "2da")
-                    LotteryBall(number = "22", size = 72.dp, variant = BallVariant.EMERALD, label = "3ra")
+                val draw = state.lastDraw
+                if (draw == null && state.isLoading) {
+                    CircularProgressIndicator(
+                        color = EmeraldBright,
+                        modifier = Modifier.size(32.dp)
+                    )
+                } else if (draw != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LotteryBall(number = draw.firstNumber, size = 72.dp, variant = BallVariant.EMERALD, label = "1ra")
+                        LotteryBall(number = draw.secondNumber, size = 72.dp, variant = BallVariant.EMERALD, label = "2da")
+                        LotteryBall(number = draw.thirdNumber, size = 72.dp, variant = BallVariant.EMERALD, label = "3ra")
+                    }
+                } else {
+                    Text(
+                        text = "Sin sorteos importados todavía.\nVe a Import para cargar un CSV/XLSX.",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-
                 Divider(color = EmeraldPrimary.copy(alpha = 0.2f), thickness = 1.dp)
-
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "Resultados del Sorteo: Hoy 1:00 PM",
-                        color = Color(0xFFA7F3D0),
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        text = "Próximo Sorteo: 1h 45m",
-                        color = EmeraldBright,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text("Fecha", color = TextSecondary, fontSize = 10.sp)
+                        Text(
+                            text = draw?.drawDate ?: "—",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Button(
+                        onClick = onNavigateToStats,
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Ver estadísticas", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
                 }
             }
         }
 
-        // Card 2: DETECCIÓN DE ANOMALÍAS (Mockup Image 1)
+        // Acceso directo Laboratorio
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
             color = DarkSurface,
-            shape = RoundedCornerShape(24.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "DETECCIÓN DE ANOMALÍAS (Quiniela Real)",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 3 Indicadores métricos
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Laboratorio de Backtesting", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("Simulación cronológica sin fuga temporal", color = TextSecondary, fontSize = 11.sp)
+                }
+                Button(
+                    onClick = onNavigateToLab,
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldAccent.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    // Puntaje
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        color = DarkBackground,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Puntaje AI Anómalo", color = TextSecondary, fontSize = 9.sp)
-                            Text("92 Alto", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-
-                    // Alerta
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        color = DarkBackground,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Nivel de Alerta", color = TextSecondary, fontSize = 9.sp)
-                            Text("Crítico", color = AlertRed, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-
-                    // Detección
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        color = DarkBackground,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Última Detección", color = TextSecondary, fontSize = 9.sp)
-                            Text("#14", color = EmeraldPrimary, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                            Text("p=0.003", color = TextSecondary, fontSize = 9.sp)
-                        }
-                    }
+                    Text("Abrir", color = GoldAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
             }
         }

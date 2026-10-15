@@ -2,12 +2,12 @@ package com.realpredict.ai.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,19 +16,34 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.realpredict.ai.di.AppContainer
 import com.realpredict.ai.ui.components.BallVariant
 import com.realpredict.ai.ui.components.LotteryBall
 import com.realpredict.ai.ui.theme.*
+import com.realpredict.ai.viewmodel.StatisticsViewModel
+import com.realpredict.ai.viewmodel.StatisticsUiState
+
+@Composable
+fun StatisticsViewModelFactory(): StatisticsViewModel = viewModel {
+    AppContainer.statisticsViewModel()
+}
 
 @Composable
 fun StatisticsScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: StatisticsViewModel = StatisticsViewModelFactory()
 ) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedSubTab by remember { mutableStateOf("grid") }
-    var selectedNumber by remember { mutableStateOf<String?>(null) }
 
-    val allNumbers = remember {
-        (0..99).map { String.format("%02d", it) }
+    val allNumbers = remember { (0..99).map { String.format("%02d", it) } }
+    val hotSet by remember(state.hotNumbers) {
+        derivedStateOf { state.hotNumbers.take(10).map { it.first }.toSet() }
+    }
+    val coldSet by remember(state.coldNumbers) {
+        derivedStateOf { state.coldNumbers.take(10).map { it.first }.toSet() }
     }
 
     Column(
@@ -38,7 +53,7 @@ fun StatisticsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Encabezado
+        // Encabezado con datos REALES
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -58,11 +73,25 @@ fun StatisticsScreen(
                 )
             }
             Text(
-                text = "110 Sorteos",
+                text = if (state.isLoading) "..." else "${state.totalDraws} sorteos",
                 color = EmeraldPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
+        }
+
+        // Rango de fechas + mensaje error
+        if (state.dateRange.isNotEmpty()) {
+            Text(
+                text = "Rango: ${state.dateRange}",
+                color = TextSecondary,
+                fontSize = 10.sp
+            )
+        }
+        state.errorMessage?.let { err ->
+            Surface(color = Color(0xFF3B1B1B), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(err, color = Color(0xFFFFB4AB), fontSize = 11.sp, modifier = Modifier.padding(10.dp))
+            }
         }
 
         // Sub Tabs
@@ -76,7 +105,7 @@ fun StatisticsScreen(
             listOf(
                 "grid" to "Matriz 00-99",
                 "freq" to "Frecuencias",
-                "week" to "Semanal"
+                "hot" to "Hot/Cold"
             ).forEach { (id, label) ->
                 val isSelected = selectedSubTab == id
                 Surface(
@@ -90,15 +119,20 @@ fun StatisticsScreen(
                         color = if (isSelected) DarkBackground else TextSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .padding(vertical = 8.dp)
-                            .wrapContentWidth(Alignment.CenterHorizontally)
+                        modifier = Modifier.padding(vertical = 8.dp).wrapContentWidth(Alignment.CenterHorizontally)
                     )
                 }
             }
         }
 
-        // Contenido Grid 00-99
+        if (state.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = EmeraldBright)
+            }
+            return@Column
+        }
+
+        // Contenido Grid 00-99 con HOT/COLD basado en datos REALES del motor
         if (selectedSubTab == "grid") {
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -123,9 +157,7 @@ fun StatisticsScreen(
                             Text("COLD: Ámbar", color = GoldAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-
                     Spacer(modifier = Modifier.height(10.dp))
-
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(10),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -133,15 +165,94 @@ fun StatisticsScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(allNumbers) { num ->
-                            val isHot = num in listOf("14", "25", "71", "62", "99")
-                            val isCold = num in listOf("23", "44", "52", "76")
-                            val variant = if (isHot) BallVariant.EMERALD else if (isCold) BallVariant.AMBER else BallVariant.DARK
+                            val variant = when {
+                                num in hotSet -> BallVariant.EMERALD
+                                num in coldSet -> BallVariant.AMBER
+                                else -> BallVariant.DARK
+                            }
+                            LotteryBall(number = num, size = 32.dp, variant = variant)
+                        }
+                    }
+                }
+            }
+        }
 
-                            LotteryBall(
-                                number = num,
-                                size = 32.dp,
-                                variant = variant
-                            )
+        // Top 10 HOT
+        if (selectedSubTab == "hot") {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = DarkSurface,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Top 10 — Más frecuentes", color = EmeraldPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(state.hotNumbers.take(10)) { (num, count) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                LotteryBall(number = num, size = 36.dp, variant = BallVariant.EMERALD)
+                                Text("Apariciones: $count", color = Color.White, fontSize = 12.sp)
+                                Text(
+                                    "%.2f%%".format((count.toDouble() / (state.totalDraws * 3)) * 100),
+                                    color = TextSecondary, fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Top 10 — Menos frecuentes", color = GoldAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(state.coldNumbers.take(10)) { (num, count) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                LotteryBall(number = num, size = 36.dp, variant = BallVariant.AMBER)
+                                Text("Apariciones: $count", color = Color.White, fontSize = 12.sp)
+                                Text(
+                                    if (count > 0) "%.2f%%".format((count.toDouble() / (state.totalDraws * 3)) * 100) else "—",
+                                    color = TextSecondary, fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Frecuencias por número
+        if (selectedSubTab == "freq") {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = DarkSurface,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Frecuencia por número (00-99)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    val perNumber = state.perNumber
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        items(allNumbers) { num ->
+                            val count = perNumber[num] ?: 0
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(num, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                LinearProgressIndicator(
+                                    progress = { (count.toFloat() / (state.totalDraws * 3)) },
+                                    color = EmeraldPrimary,
+                                    trackColor = Color.White.copy(alpha = 0.1f),
+                                    modifier = Modifier.width(140.dp).height(8.dp)
+                                )
+                                Text("$count", color = TextSecondary, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
