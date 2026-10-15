@@ -15,3 +15,17 @@
 local.properties
 *.apk
 *.aab
+
+# Modules build outputs
+/core-common/build/
+/core-domain/build/
+/core-statistics/build/
+/core-data/build/
+/core-security/build/
+/core-ai/build/
+
+# Never commit API Keys, secrets, signing configs
+secrets.properties
+*.keystore
+*.jks
+google-services.json

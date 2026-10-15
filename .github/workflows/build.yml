@@ -1,0 +1,187 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Token de GitHub Actions solo con permisos mínimos necesarios.
+permissions:
+  contents: read
+  checks: write   # para reportar resultados de tests en la UI de PR
+  pull-requests: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Job 1 — Verifica formato y compila módulos Kotlin/JVM puros.
+  # No requiere Android SDK: statistics, common, domain.
+  # ---------------------------------------------------------------------
+  jvm-build:
+    name: JVM modules (statistics, common, domain)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-jvm-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-jvm-
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+
+      - name: Compile common
+        run: ./gradlew :core-common:compileKotlin --no-daemon --stacktrace
+
+      - name: Compile domain
+        run: ./gradlew :core-domain:compileKotlin --no-daemon --stacktrace
+
+      - name: Compile statistics
+        run: ./gradlew :core-statistics:compileKotlin --no-daemon --stacktrace
+
+      - name: Run unit tests (JVM)
+        run: ./gradlew :core-common:test :core-domain:test :core-statistics:test --no-daemon --stacktrace
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-test-results
+          path: |
+            core-*/build/test-results/
+            core-*/build/reports/tests/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------
+  # Job 2 — Compila y testea módulos Android (data, security, ai) + :app
+  # Requiere Android SDK (Setup-Android action).
+  # ---------------------------------------------------------------------
+  android-build:
+    name: Android modules + app (compile, lint, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: jvm-build   # solo ejecuta si los módulos JVM puros pasaron
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          accept-android-licenses: true
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-android-
+
+      - name: Cache Android dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android
+          key: android-deps-${{ runner.os }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Run Lint
+        run: ./gradlew lintDebug --no-daemon --stacktrace
+        continue-on-error: true   # lint no bloquea PR en esta primera versión
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/lint-results-*.html
+            **/build/reports/lint-results-*.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: |
+            **/build/test-results/
+            **/build/reports/tests/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------
+  # Job 3 — Resumen: pasa solo si todos los anteriores pasaron.
+  # ---------------------------------------------------------------------
+  summary:
+    name: Build summary
+    runs-on: ubuntu-latest
+    needs: [jvm-build, android-build]
+    if: always()
+    steps:
+      - name: Check status
+        run: |
+          echo "jvm-build: ${{ needs.jvm-build.result }}"
+          echo "android-build: ${{ needs.android-build.result }}"
+          if [[ "${{ needs.jvm-build.result }}" == "success" && "${{ needs.android-build.result }}" == "success" ]]; then
+            echo "✅ Todos los checks pasaron"
+            exit 0
+          else
+            echo "❌ Algun check falló"
+            exit 1
+          fi
