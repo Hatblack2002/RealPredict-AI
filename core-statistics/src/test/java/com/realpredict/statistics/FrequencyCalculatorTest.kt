@@ -19,7 +19,7 @@ class FrequencyCalculatorTest {
             FrequencyCalculator.compute(emptyList())
             assert(false) { "Debería lanzar excepción" }
         } catch (e: IllegalArgumentException) {
-            assertThat(e.message).contains("vacia")
+            assertThat(e.message).contains("vac")  // coincide con "vacía" o "vacia"
         }
     }
 

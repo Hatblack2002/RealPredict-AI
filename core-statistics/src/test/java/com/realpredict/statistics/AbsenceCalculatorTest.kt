@@ -46,7 +46,7 @@ class AbsenceCalculatorTest {
             AbsenceCalculator.compute(emptyList(), "2024-01-01")
             assert(false)
         } catch (e: IllegalArgumentException) {
-            assertThat(e.message).contains("vacia")
+            assertThat(e.message).contains("vac")  // coincide con "vacíos" o "vacia"
         }
     }
 
