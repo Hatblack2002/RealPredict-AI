@@ -10,6 +10,7 @@ import com.realpredict.statistics.StatisticsReport
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -48,12 +49,7 @@ class StatisticsViewModel(
         viewModelScope.launch(dispatchers.io) {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
-                val draws = drawRepository.observeAll().let { flow ->
-                    // snapshot único del flow actual
-                    var snapshot: List<com.realpredict.domain.model.Draw> = emptyList()
-                    flow.collect { snapshot = it; return@collect }
-                    snapshot
-                }
+                val draws = drawRepository.observeAll().first()
                 if (draws.isEmpty()) {
                     _uiState.value = StatisticsUiState(
                         isLoading = false,
