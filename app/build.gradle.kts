@@ -64,13 +64,12 @@ android {
 
 dependencies {
     // === Módulos del motor (engine) ===
-    // Descomenta estas líneas cuando quieras conectar la UI con el engine:
-    // implementation(project(":core-common"))
-    // implementation(project(":core-domain"))
-    // implementation(project(":core-statistics"))
-    // implementation(project(":core-data"))
-    // implementation(project(":core-security"))
-    // implementation(project(":core-ai"))
+    implementation(project(":core-common"))
+    implementation(project(":core-domain"))
+    implementation(project(":core-statistics"))
+    implementation(project(":core-data"))
+    implementation(project(":core-security"))
+    implementation(project(":core-ai"))
 
     // AndroidX & Core
     implementation(libs.core.ktx)

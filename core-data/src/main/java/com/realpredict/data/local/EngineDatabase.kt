@@ -8,18 +8,28 @@ import com.realpredict.data.local.dao.*
 import com.realpredict.data.local.entity.*
 
 /**
- * Base de datos local del motor RealPredict AI.
- * Versión 2 (añade las nuevas tablas del motor; la v1 solo tenía `draws`).
+ * Base de datos UNIFICADA del motor RealPredict AI.
+ * Reemplaza a la `RealPredictDatabase` legacy que estaba en `:app`.
  *
- * NOTA: La app ya existe con `RealPredictDatabase` en `:app`. Esta es la versión
- * extendida del motor. Para integrar, recomendamos migrar a esta BD unificada y
- * eliminar la del :app, o mantenerlas separadas y referenciar ambas desde :app.
+ * Versión 1, schema exportado (exportSchema = true) para auditoría.
  *
- * Migraciones: NUNCA usar destructiveMigration en producción. Esta versión trae
- * esqueleto de migración para añadir tablas nuevas.
+ * Tablas incluidas:
+ *  - draws (migrada desde :app)
+ *  - import_batches
+ *  - predictions (inmutable: solo @Insert)
+ *  - prediction_evaluations
+ *  - provider_configurations
+ *  - chat_conversations
+ *  - chat_messages
+ *  - experiments
+ *
+ * Migraciones: NUNCA usar destructiveMigration en producción.
+ * Para desarrollo inicial está bien; antes del release a Play Store,
+ * definir migraciones reales con Migration object.
  */
 @Database(
     entities = [
+        DrawEntity::class,
         ImportBatchEntity::class,
         PredictionEntity::class,
         PredictionEvaluationEntity::class,
@@ -32,6 +42,7 @@ import com.realpredict.data.local.entity.*
     exportSchema = true
 )
 abstract class EngineDatabase : RoomDatabase() {
+    abstract fun drawDao(): DrawDao
     abstract fun importBatchDao(): ImportBatchDao
     abstract fun predictionDao(): PredictionDao
     abstract fun predictionEvaluationDao(): PredictionEvaluationDao
@@ -41,7 +52,7 @@ abstract class EngineDatabase : RoomDatabase() {
     abstract fun experimentDao(): ExperimentDao
 
     companion object {
-        private const val DB_NAME = "realpredict_engine.db"
+        private const val DB_NAME = "realpredict.db"
 
         @Volatile
         private var INSTANCE: EngineDatabase? = null
@@ -53,13 +64,12 @@ abstract class EngineDatabase : RoomDatabase() {
                     EngineDatabase::class.java,
                     DB_NAME
                 )
-                    // En producción: definir migraciones reales, NO destructive.
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
             }
 
-        /** Solo para tests: permite inyectar una BD en memoria. */
+        /** Para tests: BD en memoria. */
         fun inMemory(context: Context): EngineDatabase =
             Room.inMemoryDatabaseBuilder(context, EngineDatabase::class.java)
                 .allowMainThreadQueries()

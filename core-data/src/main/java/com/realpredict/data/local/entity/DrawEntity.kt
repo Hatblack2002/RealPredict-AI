@@ -1,9 +1,13 @@
-package com.realpredict.ai.data.local.entity
+package com.realpredict.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.Index
 
+/**
+ * Tabla de sorteos históricos (migrada desde :app — sin duplicación).
+ * Los números se conservan como String "00"-"99", nunca como Int.
+ */
 @Entity(
     tableName = "draws",
     indices = [
@@ -15,9 +19,9 @@ data class DrawEntity(
     val id: String,
     val drawDate: String,
     val drawType: String,
-    val firstNumber: String,  // Almacenado como String "00" a "99" (nunca Int)
-    val secondNumber: String, // Almacenado como String "00" a "99" (nunca Int)
-    val thirdNumber: String,  // Almacenado como String "00" a "99" (nunca Int)
+    val firstNumber: String,   // String "00".."99"
+    val secondNumber: String,
+    val thirdNumber: String,
     val sourceId: String,
     val sourceRow: Int?,
     val verificationStatus: String,

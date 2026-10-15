@@ -1,20 +1,27 @@
 package com.realpredict.ai
 
 import android.app.Application
-import com.realpredict.ai.data.local.RealPredictDatabase
-import com.realpredict.ai.data.security.KeystoreManager
+import com.realpredict.data.local.EngineDatabase
+import com.realpredict.security.CryptoManager
 
+/**
+ * Application principal. Inicializa el motor: base de datos unificada
+ * (EngineDatabase de :core-data) y gestor criptográfico (CryptoManager de :core-security).
+ *
+ * Los antiguos RealPredictDatabase y KeystoreManager legacy se eliminaron del :app
+ * para evitar duplicación con los módulos del motor.
+ */
 class RealPredictApp : Application() {
 
-    lateinit var database: RealPredictDatabase
+    lateinit var database: EngineDatabase
         private set
 
-    lateinit var keystoreManager: KeystoreManager
+    lateinit var cryptoManager: CryptoManager
         private set
 
     override fun onCreate() {
         super.onCreate()
-        database = RealPredictDatabase.getDatabase(this)
-        keystoreManager = KeystoreManager(this)
+        database = EngineDatabase.get(this)
+        cryptoManager = CryptoManager(this)
     }
 }
