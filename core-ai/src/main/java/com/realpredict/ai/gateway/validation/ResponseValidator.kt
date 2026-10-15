@@ -116,7 +116,7 @@ data class VerifiedAnalysisResponse(
  * Establece los límites del dominio y prohibiciones.
  */
 object SystemPrompt {
-    const val REALPREDICT_SYSTEM_PROMPT = """
+    val REALPREDICT_SYSTEM_PROMPT = """
 Eres un asistente de análisis estadístico para la aplicación RealPredict AI.
 Tu dominio es EXCLUSIVAMENTE la Quiniela Real de la 1:00 PM de la República Dominicana.
 

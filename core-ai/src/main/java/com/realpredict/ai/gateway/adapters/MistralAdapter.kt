@@ -7,6 +7,7 @@ import com.realpredict.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -230,7 +231,10 @@ class MistralAdapter(
 internal data class MistralModelsResponse(val data: List<MistralModel>)
 
 @Serializable
-internal data class MistralModel(val id: String, val object: String? = null)
+internal data class MistralModel(
+    val id: String,
+    @SerialName("object") val objectName: String? = null
+)
 
 @Serializable
 internal data class MistralChatResponse(

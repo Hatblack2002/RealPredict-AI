@@ -13,7 +13,6 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 
 /**
  * Importador de archivos CSV con encabezados configurables (Sección 5).
@@ -55,7 +54,7 @@ class CsvImporter(
                 rejected = emptyList(),
                 duplicates = emptyList(),
                 warnings = listOf("Archivo CSV vacío"),
-                fileHash = sha256(input),
+                fileHash = "",
                 sourceId = sourceId
             )
         }
@@ -65,26 +64,37 @@ class CsvImporter(
 
         val errors = mutableListOf<RowError>()
         val accepted = mutableListOf<Draw>()
-        val duplicateKeys = mutableSetOf<String>()
         val seen = mutableSetOf<String>()  // clave (fecha, tipo)
 
         for ((idx, row) in rows.drop(1).withIndex()) {
             val rowNumber = idx + 2  // +1 por header, +1 por 1-indexed
             try {
                 val fecha = row.getOrNull(mapping.fechaIndex)
-                    ?: throw IllegalArgumentException("Falta columna Fecha")
+                if (fecha == null) {
+                    errors += RowError(rowNumber, "Falta columna Fecha", row.toList())
+                    continue
+                }
                 val primera = row.getOrNull(mapping.primeraIndex)
-                    ?: throw IllegalArgumentException("Falta columna Primera")
+                if (primera == null) {
+                    errors += RowError(rowNumber, "Falta columna Primera", row.toList())
+                    continue
+                }
                 val segunda = row.getOrNull(mapping.segundaIndex)
-                    ?: throw IllegalArgumentException("Falta columna Segunda")
+                if (segunda == null) {
+                    errors += RowError(rowNumber, "Falta columna Segunda", row.toList())
+                    continue
+                }
                 val tercera = row.getOrNull(mapping.terceraIndex)
-                    ?: throw IllegalArgumentException("Falta columna Tercera")
+                if (tercera == null) {
+                    errors += RowError(rowNumber, "Falta columna Tercera", row.toList())
+                    continue
+                }
 
                 val fechaIso = parseDate(fecha.trim(), dateFormat)
-                    ?: run {
-                        errors += RowError(rowNumber, "Fecha inválida: '$fecha'", row.toList())
-                        return@try
-                    }
+                if (fechaIso == null) {
+                    errors += RowError(rowNumber, "Fecha inválida: '$fecha'", row.toList())
+                    continue
+                }
 
                 val p1 = primera.trim().padToTwoDigits()
                 val p2 = segunda.trim().padToTwoDigits()
@@ -92,14 +102,13 @@ class CsvImporter(
 
                 if (!Constants.isValidNumber(p1) || !Constants.isValidNumber(p2) || !Constants.isValidNumber(p3)) {
                     errors += RowError(rowNumber, "Número fuera de rango 00-99: $primera/$segunda/$tercera", row.toList())
-                    return@try
+                    continue
                 }
 
                 val key = "$fechaIso|${Constants.DRAW_TYPE_QUINIELA_REAL_1PM}"
                 if (key in seen) {
-                    duplicateKeys += key
                     errors += RowError(rowNumber, "Duplicado detectado (misma fecha y tipo)", row.toList())
-                    return@try
+                    continue
                 }
                 seen += key
 
@@ -126,7 +135,7 @@ class CsvImporter(
             rejected = errors.filter { it.reason.contains("inválid") || it.reason.contains("fuera de rango") || it.reason.contains("Falta") },
             duplicates = errors.filter { it.reason.contains("Duplicado") },
             warnings = errors.filter { it.reason.contains("vacío") || it.reason.contains("Duplicado") }.map { "Fila ${it.rowNumber}: ${it.reason}" },
-            fileHash = "",  // recalculado por el caller si guarda el archivo
+            fileHash = "",
             sourceId = sourceId
         )
     }
@@ -161,19 +170,12 @@ class CsvImporter(
     private fun String.padToTwoDigits(): String {
         val trimmed = this.trim()
         if (trimmed.isEmpty()) return this
-        // Si ya tiene 2 dígitos, dejar igual. Si tiene 1, padLeft. Si 3+ y son puros dígitos, tomar últimos 2.
         return when {
             trimmed.length == 2 && trimmed.all { it.isDigit() } -> trimmed
             trimmed.length == 1 && trimmed.all { it.isDigit() } -> "0$trimmed"
             trimmed.length > 2 && trimmed.all { it.isDigit() } -> trimmed.takeLast(2)
             else -> trimmed  // deja que la validación falle
         }
-    }
-
-    private fun sha256(input: InputStream): String {
-        // Nota: esto consume el stream. Se debe llamar antes de leer el CSV,
-        // o guardar el contenido en un ByteArray para reutilizar.
-        return ""  // placeholder: la verificación real la hace el repositorio
     }
 }
 
