@@ -60,10 +60,10 @@ class XlsxImporter(
                 }
 
                 val fechaIso = parseDate(fecha.trim(), dateFormat)
-                    ?: run {
-                        errors += RowError(rowNumber, "Fecha inválida: '$fecha'", listOf(fecha, primera, segunda, tercera))
-                        continue
-                    }
+                if (fechaIso == null) {
+                    errors += RowError(rowNumber, "Fecha inválida: '$fecha'", listOf(fecha, primera, segunda, tercera))
+                    continue
+                }
 
                 val p1 = primera.trim().padToTwoDigits()
                 val p2 = segunda.trim().padToTwoDigits()
