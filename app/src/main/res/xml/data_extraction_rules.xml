@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- No incluir backups en cloud por defecto (datos sensibles locales) -->
+    </cloud-backup>
+    <device-transfer>
+        <!-- Permitir transferencia entre dispositivos del mismo usuario -->
+    </device-transfer>
+</data-extraction-rules>
