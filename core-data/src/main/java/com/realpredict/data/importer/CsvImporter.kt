@@ -1,10 +1,7 @@
 package com.realpredict.data.importer
 
-import com.opencsv.CSVReader
-import com.realpredict.common.AppError
 import com.realpredict.common.Constants
 import com.realpredict.common.IdGenerator
-import com.realpredict.common.Result
 import com.realpredict.common.TimeProvider
 import com.realpredict.domain.model.Draw
 import com.realpredict.domain.model.VerificationStatus
@@ -16,6 +13,10 @@ import java.nio.charset.StandardCharsets
 
 /**
  * Importador de archivos CSV con encabezados configurables (Sección 5).
+ *
+ * Parsing manual sin depender de OpenCSV (evita ambigüedades de overload
+ * que surgieron con la versión 5.9). Acepta comillas dobles para celdas
+ * con espacios o delimitadores embebidos.
  *
  * Encabezados preferidos: Fecha | Sorteo | Primera | Segunda | Tercera
  * Admite aliases comunes vía [ColumnMapping].
@@ -30,12 +31,6 @@ class CsvImporter(
     private val defaultDelimiter: Char = ','
 ) {
 
-    /**
-     * @param input Stream del archivo CSV.
-     * @param sourceId Identificador de fuente (ej: nombre del archivo).
-     * @param columnMapping Mapeo de columnas (auto-detectado si es null).
-     * @param dateFormat Formato de fecha (por defecto yyyy-MM-dd; el usuario puede elegir dd-MM-yyyy, etc.).
-     */
     fun import(
         input: InputStream,
         sourceId: String,
@@ -44,10 +39,10 @@ class CsvImporter(
         charset: Charset = defaultCharset,
         delimiter: Char = defaultDelimiter
     ): ImportResult {
-        val reader = CSVReader(BufferedReader(InputStreamReader(input, charset)), delimiter)
-        val rows = reader.readAll()
+        val reader = BufferedReader(InputStreamReader(input, charset))
+        val rawLines: List<String> = reader.use { it.readLines() }
 
-        if (rows.isEmpty()) {
+        if (rawLines.isEmpty()) {
             return ImportResult(
                 totalRows = 0,
                 acceptedDraws = emptyList(),
@@ -59,40 +54,41 @@ class CsvImporter(
             )
         }
 
+        val rows: List<List<String>> = rawLines.map { parseLine(it, delimiter) }
         val header = rows.first().map { it.trim().lowercase() }
         val mapping = columnMapping ?: ColumnMapping.autoDetect(header)
 
         val errors = mutableListOf<RowError>()
         val accepted = mutableListOf<Draw>()
-        val seen = mutableSetOf<String>()  // clave (fecha, tipo)
+        val seen = mutableSetOf<String>()
 
         for ((idx, row) in rows.drop(1).withIndex()) {
-            val rowNumber = idx + 2  // +1 por header, +1 por 1-indexed
+            val rowNumber = idx + 2
             try {
-                val fecha = row.getOrNull(mapping.fechaIndex)
-                if (fecha == null) {
-                    errors += RowError(rowNumber, "Falta columna Fecha", row.toList())
+                val fecha = row.getOrNullSafe(mapping.fechaIndex)
+                if (fecha.isNullOrBlank()) {
+                    errors += RowError(rowNumber, "Falta columna Fecha", row)
                     continue
                 }
-                val primera = row.getOrNull(mapping.primeraIndex)
-                if (primera == null) {
-                    errors += RowError(rowNumber, "Falta columna Primera", row.toList())
+                val primera = row.getOrNullSafe(mapping.primeraIndex)
+                if (primera.isNullOrBlank()) {
+                    errors += RowError(rowNumber, "Falta columna Primera", row)
                     continue
                 }
-                val segunda = row.getOrNull(mapping.segundaIndex)
-                if (segunda == null) {
-                    errors += RowError(rowNumber, "Falta columna Segunda", row.toList())
+                val segunda = row.getOrNullSafe(mapping.segundaIndex)
+                if (segunda.isNullOrBlank()) {
+                    errors += RowError(rowNumber, "Falta columna Segunda", row)
                     continue
                 }
-                val tercera = row.getOrNull(mapping.terceraIndex)
-                if (tercera == null) {
-                    errors += RowError(rowNumber, "Falta columna Tercera", row.toList())
+                val tercera = row.getOrNullSafe(mapping.terceraIndex)
+                if (tercera.isNullOrBlank()) {
+                    errors += RowError(rowNumber, "Falta columna Tercera", row)
                     continue
                 }
 
                 val fechaIso = parseDate(fecha.trim(), dateFormat)
                 if (fechaIso == null) {
-                    errors += RowError(rowNumber, "Fecha inválida: '$fecha'", row.toList())
+                    errors += RowError(rowNumber, "Fecha inválida: '$fecha'", row)
                     continue
                 }
 
@@ -101,13 +97,13 @@ class CsvImporter(
                 val p3 = tercera.trim().padToTwoDigits()
 
                 if (!Constants.isValidNumber(p1) || !Constants.isValidNumber(p2) || !Constants.isValidNumber(p3)) {
-                    errors += RowError(rowNumber, "Número fuera de rango 00-99: $primera/$segunda/$tercera", row.toList())
+                    errors += RowError(rowNumber, "Número fuera de rango 00-99: $primera/$segunda/$tercera", row)
                     continue
                 }
 
                 val key = "$fechaIso|${Constants.DRAW_TYPE_QUINIELA_REAL_1PM}"
                 if (key in seen) {
-                    errors += RowError(rowNumber, "Duplicado detectado (misma fecha y tipo)", row.toList())
+                    errors += RowError(rowNumber, "Duplicado detectado (misma fecha y tipo)", row)
                     continue
                 }
                 seen += key
@@ -125,7 +121,7 @@ class CsvImporter(
                     createdAt = timeProvider.nowIso()
                 )
             } catch (e: Exception) {
-                errors += RowError(rowNumber, e.message ?: "Error desconocido", row.toList())
+                errors += RowError(rowNumber, e.message ?: "Error desconocido", row)
             }
         }
 
@@ -139,6 +135,43 @@ class CsvImporter(
             sourceId = sourceId
         )
     }
+
+    /**
+     * Parser CSV simple que respeta comillas dobles embebidas.
+     * No implementa el estándar RFC 4180 completo, pero soporta el caso común
+     * de celdas sin delimitadores embebidos (típico en lotería).
+     */
+    private fun parseLine(line: String, delimiter: Char): List<String> {
+        if (line.isEmpty()) return emptyList()
+        val result = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' -> {
+                    if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                        current.append('"')
+                        i += 2
+                        continue
+                    }
+                    inQuotes = !inQuotes
+                }
+                c == delimiter && !inQuotes -> {
+                    result.add(current.toString())
+                    current.clear()
+                }
+                else -> current.append(c)
+            }
+            i++
+        }
+        result.add(current.toString())
+        return result
+    }
+
+    private fun List<String>.getOrNullSafe(index: Int): String? =
+        if (index in 0 until size) this[index] else null
 
     private fun parseDate(value: String, format: DateFormat): String? {
         return when (format) {
@@ -174,14 +207,11 @@ class CsvImporter(
             trimmed.length == 2 && trimmed.all { it.isDigit() } -> trimmed
             trimmed.length == 1 && trimmed.all { it.isDigit() } -> "0$trimmed"
             trimmed.length > 2 && trimmed.all { it.isDigit() } -> trimmed.takeLast(2)
-            else -> trimmed  // deja que la validación falle
+            else -> trimmed
         }
     }
 }
 
-/**
- * Mapeo de columnas. Auto-detecta con aliases comunes en español.
- */
 data class ColumnMapping(
     val fechaIndex: Int,
     val primeraIndex: Int,
@@ -204,10 +234,10 @@ data class ColumnMapping(
 }
 
 enum class DateFormat {
-    ISO_YYYY_MM_DD,        // 2024-01-15
-    DD_MM_YYYY_DASH,       // 15-01-2024
-    DD_MM_YYYY_SLASH,      // 15/01/2024
-    MM_DD_YYYY_SLASH       // 01/15/2024
+    ISO_YYYY_MM_DD,
+    DD_MM_YYYY_DASH,
+    DD_MM_YYYY_SLASH,
+    MM_DD_YYYY_SLASH
 }
 
 data class ImportResult(

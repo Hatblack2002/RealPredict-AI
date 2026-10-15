@@ -47,7 +47,6 @@ dependencies {
     // Excel / CSV
     implementation(libs.poi.main)
     implementation(libs.poi.ooxml)
-    implementation(libs.opencsv)
 
     // Testing
     testImplementation(libs.junit)
