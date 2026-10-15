@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_primary">#0B0F14</color>
+    <color name="bg_surface">#141B24</color>
+    <color name="bg_surface_elevated">#1B2430</color>
+    <color name="accent_emerald">#19C37D</color>
+    <color name="accent_emerald_bright">#00E676</color>
+    <color name="accent_gold">#D8B45A</color>
+    <color name="text_primary">#F1F5F9</color>
+    <color name="text_secondary">#94A3B8</color>
+</resources>
